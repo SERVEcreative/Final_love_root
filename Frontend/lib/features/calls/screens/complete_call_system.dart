@@ -165,6 +165,13 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
   void _handleIncomingCall(Map<String, dynamic> payload) {
     try {
       final data = payload['data'];
+      
+      // Add null safety check for data
+      if (data == null) {
+        print('⚠️ [CALL_SYSTEM] Received null data, ignoring message');
+        return;
+      }
+      
       final type = data['type'];
       final from = payload['from'];
       final to = payload['to'];
@@ -670,6 +677,16 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
       print('🔍 [CALL_SYSTEM] Error finding user: $e');
       return 'Unknown User';
     }
+  }
+
+  /// Get the name of the other person in the call (the person you're talking to)
+  String _getOtherPersonName() {
+    // If we have a callee ID, we're the caller, so show callee name
+    if (_calleeId != null) {
+      return _calleeName ?? 'Unknown';
+    }
+    // If we don't have a callee ID, we're the callee, so show caller name
+    return _callerName ?? 'Unknown';
   }
 
   void _toggleMute() {
@@ -1413,7 +1430,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
                           ),
                         ),
                         Text(
-                          _callState == 'calling' ? (_calleeName ?? 'Unknown') : (_callerName ?? 'Unknown'),
+                          _getOtherPersonName(),
                           style: TextStyle(
                             fontSize: 18,
                             color: Colors.white,
@@ -1545,7 +1562,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
           
           // User Name
           Text(
-            _callState == 'calling' ? (_calleeName ?? 'Unknown') : (_callerName ?? 'Unknown'),
+            _getOtherPersonName(),
             style: TextStyle(
               fontSize: 24,
               color: Colors.white,
