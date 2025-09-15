@@ -3,7 +3,7 @@ import '../../coins/services/coin_service.dart';
 import '../../coins/services/admob_service.dart';
 import '../../profile/screens/profile_screen.dart';
 import '../services/dashboard_service.dart';
-import '../../discovery/screens/discovery_screen.dart';
+import '../../calls/screens/complete_call_system.dart';
 // Chat functionality removed
 import '../widgets/navigation/bottom_navigation_widget.dart';
 import '../../../shared/models/user_profile.dart';
@@ -75,11 +75,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _getCurrentScreen() {
     switch (_selectedIndex) {
       case 0:
-        return DiscoveryScreen(
-          availableCoins: _availableCoins,
-          onActionPressed: _handleActionPressed,
-          onCoinOptionsTap: _showCoinOptions,
-        );
+        return const CompleteCallSystem();
       case 1:
         return const Center(
           child: Column(
@@ -121,11 +117,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onLogoutTap: _showLogoutDialog,
         );
       default:
-        return DiscoveryScreen(
-          availableCoins: _availableCoins,
-          onActionPressed: _handleActionPressed,
-          onCoinOptionsTap: _showCoinOptions,
-        );
+        return const CompleteCallSystem();
     }
   }
 

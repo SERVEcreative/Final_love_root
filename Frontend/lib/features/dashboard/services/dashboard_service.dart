@@ -73,20 +73,6 @@ class DashboardService {
     }
   }
 
-  /// Automatically navigate to call system when discovery screen loads
-  static void autoNavigateToCallSystem(BuildContext context) {
-    // Add a small delay to ensure the discovery screen is fully loaded
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (context.mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CompleteCallSystem(),
-          ),
-        );
-      }
-    });
-  }
 
   static void showCoinOptions(BuildContext context, Function(int) onCoinsChanged) {
     CoinDialogs.showEarnCoinsDialog(
