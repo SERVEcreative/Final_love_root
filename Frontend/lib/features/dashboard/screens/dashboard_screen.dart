@@ -19,6 +19,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   int _availableCoins = CoinService.initialCoins;
+  bool _isInCall = false;
 
   @override
   void initState() {
@@ -72,10 +73,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     DashboardService.showLogoutDialog(context);
   }
 
+  void _onCallStateChanged(bool isInCall) {
+    setState(() {
+      _isInCall = isInCall;
+    });
+  }
+
   Widget _getCurrentScreen() {
     switch (_selectedIndex) {
       case 0:
-        return const CompleteCallSystem();
+        return CompleteCallSystem(onCallStateChanged: _onCallStateChanged);
       case 1:
         return const Center(
           child: Column(
@@ -117,7 +124,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onLogoutTap: _showLogoutDialog,
         );
       default:
-        return const CompleteCallSystem();
+        return CompleteCallSystem(onCallStateChanged: _onCallStateChanged);
     }
   }
 
@@ -125,7 +132,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _getCurrentScreen(),
-      bottomNavigationBar: BottomNavigationWidget(
+      bottomNavigationBar: _isInCall ? null : BottomNavigationWidget(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
       ),
