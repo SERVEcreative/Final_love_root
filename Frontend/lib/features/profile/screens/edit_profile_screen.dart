@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import '../models/user_profile_model.dart';
 import '../services/profile_service.dart';
 
@@ -23,6 +25,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isSaving = false;
   UserProfileModel? _userProfile;
   final ProfileService _profileService = ProfileService();
+  
+  // Image picker related variables
+  final ImagePicker _imagePicker = ImagePicker();
+  File? _selectedImage;
+  bool _isUploadingImage = false;
 
   @override
   void initState() {
@@ -72,6 +79,68 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _selectImage() async {
+    try {
+      // Show image source selection dialog
+      final ImageSource? source = await showDialog<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(
+              'Select Image Source',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt, color: Colors.pink),
+                  title: Text(
+                    'Camera',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: Colors.pink),
+                  title: Text(
+                    'Gallery',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source != null) {
+        final XFile? image = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 1024,
+          maxHeight: 1024,
+          imageQuality: 85,
+        );
+
+        if (image != null) {
+          setState(() {
+            _selectedImage = File(image.path);
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to select image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -80,6 +149,51 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     });
 
     try {
+      // If a new image is selected, upload it first
+      String? imagePath;
+      if (_selectedImage != null) {
+        setState(() {
+          _isUploadingImage = true;
+        });
+        
+        try {
+          // Upload the image and get the path/URL
+          final imageUrl = await _profileService.uploadImageFile(_selectedImage!.path);
+          imagePath = imageUrl;
+          
+          setState(() {
+            _isUploadingImage = false;
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Image uploaded successfully!'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (e) {
+          setState(() {
+            _isUploadingImage = false;
+          });
+          // Don't throw error, just show warning and continue without image
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Image upload failed: $e'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+          // Continue without updating the image
+          imagePath = null;
+        }
+      }
+
+      // Update profile with all data including the new image
       final updatedProfile = await _profileService.updateProfile(
         name: _nameController.text.trim(),
         fullName: _fullNameController.text.trim(),
@@ -87,11 +201,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         gender: _selectedGender,
         location: _locationController.text.trim(),
         bio: _bioController.text.trim(),
+        image: imagePath,
       );
 
       setState(() {
         _userProfile = updatedProfile;
         _isSaving = false;
+        _selectedImage = null; // Clear selected image after successful save
       });
 
       if (mounted) {
@@ -106,6 +222,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       setState(() {
         _isSaving = false;
+        _isUploadingImage = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -136,7 +253,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          if (_isSaving)
+          if (_isSaving || _isUploadingImage)
             const Padding(
               padding: EdgeInsets.all(16.0),
               child: SizedBox(
@@ -188,74 +305,161 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Center(
       child: Column(
         children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.pink.withValues(alpha: 0.8),
-                  Colors.purple.withValues(alpha: 0.6),
-                ],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.pink.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: _userProfile?.image.isNotEmpty == true
-                ? ClipOval(
-                    child: Image.asset(
-                      _userProfile!.image,
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 50,
-                        );
-                      },
-                    ),
-                  )
-                : const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 50,
+          Stack(
+            children: [
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.pink.withValues(alpha: 0.8),
+                      Colors.purple.withValues(alpha: 0.6),
+                    ],
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.pink.withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: _buildProfileImage(),
+              ),
+              if (_isUploadingImage)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.5),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           TextButton.icon(
-            onPressed: () {
-              // TODO: Implement image picker
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Image picker - Coming Soon!'),
-                  backgroundColor: Colors.blue,
-                ),
-              );
-            },
-            icon: const Icon(Icons.camera_alt, size: 18),
+            onPressed: _isUploadingImage ? null : _selectImage,
+            icon: _isUploadingImage 
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.pink,
+                    ),
+                  )
+                : const Icon(Icons.camera_alt, size: 18),
             label: Text(
-              'Change Photo',
+              _isUploadingImage ? 'Uploading...' : 'Change Photo',
               style: GoogleFonts.poppins(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
             style: TextButton.styleFrom(
-              foregroundColor: Colors.pink,
+              foregroundColor: _isUploadingImage ? Colors.grey : Colors.pink,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProfileImage() {
+    // Debug logging
+    print('EditProfileScreen: Building profile image');
+    print('EditProfileScreen: Selected image: $_selectedImage');
+    print('EditProfileScreen: User profile image: ${_userProfile?.image}');
+    print('EditProfileScreen: User profile photoUrl: ${_userProfile?.photoUrl}');
+    
+    // Show selected image if available
+    if (_selectedImage != null) {
+      return ClipOval(
+        child: Image.file(
+          _selectedImage!,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.person,
+              color: Colors.white,
+              size: 50,
+            );
+          },
+        ),
+      );
+    }
+    
+    // Show existing profile image
+    if (_userProfile?.image.isNotEmpty == true) {
+      // Check if it's a network URL or local asset
+      if (_userProfile!.image.startsWith('http')) {
+        return Image.network(
+          _userProfile!.image,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey[300],
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.pink,
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading network image in edit profile: $error');
+            return const Icon(
+              Icons.person,
+              color: Colors.white,
+              size: 50,
+            );
+          },
+        );
+      } else {
+        return Image.asset(
+          _userProfile!.image,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading asset image in edit profile: $error');
+            return const Icon(
+              Icons.person,
+              color: Colors.white,
+              size: 50,
+            );
+          },
+        );
+      }
+    }
+    
+    // Default icon
+    return const Icon(
+      Icons.person,
+      color: Colors.white,
+      size: 50,
     );
   }
 

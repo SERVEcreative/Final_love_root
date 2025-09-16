@@ -11,7 +11,7 @@ class AppConfig {
   
   // API Configuration - Dynamic based on platform
   static Map<Environment, String> get _baseUrls => {
-    Environment.development: kIsWeb ? 'http://localhost:5000/api' : 'http://192.168.1.4:5000/api',
+    Environment.development: kIsWeb ? 'http://localhost:5000/api' : 'http://192.168.0.121:5000/api',
     Environment.staging: 'https://staging-api.yourapp.com/api',
     Environment.production: 'https://api.yourapp.com/api',
   };

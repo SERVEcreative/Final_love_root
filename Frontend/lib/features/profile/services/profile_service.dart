@@ -36,6 +36,8 @@ class ProfileService {
       final userProfile = await UserService.getCurrentUserProfile();
       
       Logger.success('📱 ProfileService: User profile loaded successfully');
+      Logger.info('📱 ProfileService: User image URL: ${userProfile.image}');
+      Logger.info('📱 ProfileService: User photoUrl: ${userProfile.photoUrl}');
       return userProfile;
       
     } catch (e) {
@@ -123,6 +125,23 @@ class ProfileService {
         image: imagePath,
         updatedAt: DateTime.now(),
       );
+    }
+  }
+
+  /// Upload image file and return URL (Uses real API call from UserService)
+  Future<String> uploadImageFile(String imagePath) async {
+    try {
+      Logger.info('📱 ProfileService: Uploading image file...');
+      
+      // Use UserService to upload image
+      final imageUrl = await UserService.uploadPhoto(imagePath);
+      
+      Logger.success('📱 ProfileService: Image file uploaded successfully');
+      return imageUrl;
+      
+    } catch (e) {
+      Logger.error('📱 ProfileService: Failed to upload image file: $e');
+      rethrow;
     }
   }
 

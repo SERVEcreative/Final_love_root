@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../models/user_profile_model.dart';
 
 class ProfileCardWidget extends StatelessWidget {
@@ -61,19 +62,7 @@ class ProfileCardWidget extends StatelessWidget {
       ),
       child: userProfile.image.isNotEmpty
           ? ClipOval(
-              child: Image.asset(
-                userProfile.image,
-                width: 100,
-                height: 100,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 40,
-                  );
-                },
-              ),
+              child: _buildProfileImage(),
             )
           : const Icon(
               Icons.person,
@@ -81,6 +70,114 @@ class ProfileCardWidget extends StatelessWidget {
               size: 40,
             ),
     );
+  }
+
+  Widget _buildProfileImage() {
+    // Debug logging
+    print('ProfileCardWidget: Building profile image');
+    print('ProfileCardWidget: Image URL: ${userProfile.image}');
+    print('ProfileCardWidget: PhotoUrl: ${userProfile.photoUrl}');
+    
+    // Test URL accessibility
+    if (userProfile.image.isNotEmpty && userProfile.image.startsWith('http')) {
+      _testImageUrl(userProfile.image);
+    }
+    
+    // Check if it's a network URL or local asset
+    if (userProfile.image.isNotEmpty && userProfile.image.startsWith('http')) {
+      return Image.network(
+        userProfile.image,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[300],
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: Colors.pink,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          print('Error loading network image: $error');
+          print('Failed URL: ${userProfile.image}');
+          return Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[300],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Image Error',
+                  style: GoogleFonts.poppins(
+                    fontSize: 8,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    } else if (userProfile.image.isNotEmpty) {
+      // Try as local asset
+      return Image.asset(
+        userProfile.image,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          print('Error loading asset image: $error');
+          return const Icon(
+            Icons.person,
+            color: Colors.white,
+            size: 40,
+          );
+        },
+      );
+    } else {
+      // No image available, show default icon
+      return const Icon(
+        Icons.person,
+        color: Colors.white,
+        size: 40,
+      );
+    }
+  }
+
+  void _testImageUrl(String url) async {
+    try {
+      print('🔍 Testing image URL accessibility: $url');
+      final response = await http.head(Uri.parse(url));
+      print('🔍 URL test response: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        print('✅ Image URL is accessible');
+      } else {
+        print('❌ Image URL returned status: ${response.statusCode}');
+        print('❌ Response headers: ${response.headers}');
+      }
+    } catch (e) {
+      print('❌ URL test failed: $e');
+    }
   }
 
   Widget _buildProfileInfo() {

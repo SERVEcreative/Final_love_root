@@ -46,6 +46,15 @@ class UserProfileModel {
   });
 
   factory UserProfileModel.fromMap(Map<String, dynamic> map) {
+    // Clean image URL by removing @ prefix if present
+    String cleanImageUrl(String? imageUrl) {
+      if (imageUrl == null || imageUrl.isEmpty) return '';
+      return imageUrl.startsWith('@') ? imageUrl.substring(1) : imageUrl;
+    }
+    
+    final rawImage = map['image'] ?? map['photoUrl'] ?? map['profileImage'] ?? map['avatar_url'] ?? '';
+    final rawPhotoUrl = map['photoUrl'] ?? map['image'] ?? map['avatar_url'] ?? '';
+    
     return UserProfileModel(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
@@ -54,8 +63,8 @@ class UserProfileModel {
       gender: map['gender'] ?? '',
       location: map['location'] ?? '',
       bio: map['bio'] ?? '',
-      image: map['image'] ?? '',
-      photoUrl: map['photoUrl'],
+      image: cleanImageUrl(rawImage),
+      photoUrl: cleanImageUrl(rawPhotoUrl),
       online: map['online'] ?? false,
       lastSeen: map['lastSeen'] ?? '',
       email: map['email'] ?? '',

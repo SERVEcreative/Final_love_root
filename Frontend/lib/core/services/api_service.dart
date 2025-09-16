@@ -1,5 +1,6 @@
 
 import 'package:dio/dio.dart';
+import 'dart:io';
 import '../utils/logger.dart';
 import '../config/app_config.dart';
 import 'token_service.dart';
@@ -126,6 +127,65 @@ class ApiService {
       return _handleResponse(response);
     } catch (e) {
       Logger.error('DELETE request failed for $endpoint', e);
+      rethrow;
+    }
+  }
+
+  /// Upload file using multipart form data
+  static Future<Map<String, dynamic>> uploadFile(
+    String endpoint, {
+    required File file,
+    required String fieldName,
+    Map<String, dynamic>? additionalFields,
+    Map<String, String>? headers,
+    Map<String, dynamic>? queryParameters,
+    ProgressCallback? onSendProgress,
+  }) async {
+    try {
+      Logger.info('Making file upload request to: $endpoint');
+      Logger.info('File path: ${file.path}');
+      Logger.info('Field name: $fieldName');
+      
+      // Add JWT token to headers if available
+      final finalHeaders = await _addAuthHeaders(headers);
+      
+      // Remove Content-Type header for multipart uploads (Dio will set it automatically)
+      finalHeaders.remove('Content-Type');
+      
+      Logger.info('Headers: $finalHeaders');
+      Logger.info('Additional fields: ${additionalFields ?? {}}');
+      
+      // Create FormData for multipart upload
+      final multipartFile = await MultipartFile.fromFile(
+        file.path,
+        filename: file.path.split('/').last,
+      );
+      
+      Logger.info('📤 Created MultipartFile: ${multipartFile.filename}');
+      Logger.info('📤 File size: ${multipartFile.length} bytes');
+      
+      final formData = FormData.fromMap({
+        fieldName: multipartFile,
+        ...?additionalFields,
+      });
+      
+      Logger.info('📤 FormData created with fields: ${formData.fields.map((e) => '${e.key}: ${e.value}').join(', ')}');
+      Logger.info('📤 FormData files: ${formData.files.map((e) => '${e.key}: ${e.value.filename}').join(', ')}');
+      
+      final response = await _dio.post(
+        endpoint,
+        data: formData,
+        queryParameters: queryParameters,
+        options: Options(
+          headers: finalHeaders,
+          contentType: 'multipart/form-data',
+        ),
+        onSendProgress: onSendProgress,
+      );
+
+      return _handleResponse(response);
+    } catch (e) {
+      Logger.error('File upload failed for $endpoint', e);
       rethrow;
     }
   }
