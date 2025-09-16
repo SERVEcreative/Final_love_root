@@ -7,7 +7,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/services/token_service.dart';
 
 class CompleteCallSystem extends StatefulWidget {
-  const CompleteCallSystem({Key? key}) : super(key: key);
+  final Function(bool)? onCallStateChanged;
+  
+  const CompleteCallSystem({Key? key, this.onCallStateChanged}) : super(key: key);
 
   @override
   State<CompleteCallSystem> createState() => _CompleteCallSystemState();
@@ -47,6 +49,10 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
   Timer? _callTimer;
   Duration _callDuration = Duration.zero;
   DateTime? _callStartTime;
+  
+  // Local video position for dragging
+  Offset _localVideoPosition = const Offset(0, 0);
+  bool _isLocalVideoPositioned = false;
   
   // Connection monitoring
   Timer? _connectionCheckTimer;
@@ -163,6 +169,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
     }
   }
 
+
   void _handleIncomingCall(Map<String, dynamic> payload) {
     try {
       final data = payload['data'];
@@ -214,7 +221,8 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         _callerName = _getUserName(callerId);
         _receivedOffer = data;
       });
-      
+
+      _notifyCallStateChange(true);
       // Fetch user name asynchronously if needed
       if (_callerName == 'Unknown User') {
         _fetchUserName(callerId);
@@ -265,6 +273,8 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         _callType = callType;
       });
 
+      _notifyCallStateChange(true);
+
       // Create peer connection and get media with individual error handling
       try {
         await _createPeerConnection();
@@ -304,6 +314,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         _callState = 'connected';
       });
 
+      _notifyCallStateChange(true);
       // Start the call timer immediately
       _startCallTimer();
       
@@ -467,7 +478,8 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
       setState(() {
         _callState = 'connected';
       });
-      
+
+      _notifyCallStateChange(true);
       // Start the call timer immediately
       _startCallTimer();
       
@@ -634,6 +646,11 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
     _pendingIceCandidates.clear();
 
     _cleanupWebRTC();
+    _notifyCallStateChange(false);
+  }
+
+  void _notifyCallStateChange(bool isInCall) {
+    widget.onCallStateChanged?.call(isInCall);
   }
 
   void _cleanupWebRTC() {
@@ -934,240 +951,383 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
   }
 
   Widget _buildUserCard(Map<String, dynamic> user) {
+    // Extract user information with fallbacks
+    final name = user['name'] ?? 'Unknown User';
+    final age = user['age'] ?? user['birth_date'] != null 
+        ? DateTime.now().year - DateTime.parse(user['birth_date']).year
+        : null;
+    final about = user['bio'] ?? user['about'] ?? 'No bio available';
+    final profileImage = user['profile_image'] ?? user['image'] ?? user['avatar'];
+    final location = user['location'] ?? user['city'] ?? 'Location not set';
+    
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      height: 100,
+      height: 320, // Taller for vertical layout
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            // Background Profile Image
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              child: profileImage != null && profileImage.isNotEmpty
+                  ? Image.network(
+                      profileImage,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _buildFallbackBackground(name);
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return _buildFallbackBackground(name);
+                      },
+                    )
+                  : _buildFallbackBackground(name),
+            ),
+            
+            // Glassmorphism Overlay
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.7),
+                  ],
+                  stops: const [0.0, 0.3, 0.7, 1.0],
+                ),
+              ),
+            ),
+            
+            // Online Status Badge - Top Right
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.green.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Online',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // User Info Overlay - Bottom
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Name and Age
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 24,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (age != null) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.pink,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '$age',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Location
+                    if (location != 'Location not set') ...[
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            size: 16,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              location,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    
+                    // Bio/About
+                    if (about != 'No bio available') ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.4),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          about,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: Colors.white,
+                            height: 1.4,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    
+                    // Action Buttons - Compact
+                    Row(
+                      children: [
+                        // Audio Call Button
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.green.shade400,
+                                  Colors.green.shade600,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.green.withOpacity(0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _startCall(user['id'], user['name'], 'audio'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.call,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      Text(
+                                        'Audio',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        '10 coins',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white70,
+                                          fontSize: 8,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        const SizedBox(width: 8),
+                        
+                        // Video Call Button
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.blue.shade400,
+                                  Colors.blue.shade600,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.blue.withOpacity(0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => _startCall(user['id'], user['name'], 'video'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.videocam,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      Text(
+                                        'Video',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        '15 coins',
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white70,
+                                          fontSize: 8,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackBackground(String name) {
+    return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withOpacity(0.25),
-            Colors.pink.shade50.withOpacity(0.3),
+            Colors.pink.shade200,
+            Colors.pink.shade400,
+            Colors.purple.shade300,
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.2),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.pink.withOpacity(0.15),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-            spreadRadius: 0,
-          ),
-          BoxShadow(
-            color: Colors.white.withOpacity(0.9),
-            blurRadius: 1,
-            offset: const Offset(0, 1),
-            spreadRadius: 0,
-          ),
-        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Enhanced Avatar with Status Ring
-            Stack(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.pink.shade300,
-                        Colors.pink.shade500,
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.pink.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      user['name'][0].toUpperCase(),
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
-                      ),
-                    ),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: GoogleFonts.poppins(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
-                // Online Status Ring
-                Positioned(
-                  bottom: 1,
-                  right: 1,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 3,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green.withOpacity(0.5),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            
-            const SizedBox(width: 16),
-            
-            // User Info Section
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user['name'],
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Colors.green,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.5),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Online Now',
-                        style: GoogleFonts.poppins(
-                          color: Colors.green.shade600,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ),
             ),
-            
-            // Enhanced Call Buttons
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Voice Call Button
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.green.shade400,
-                        Colors.green.shade600,
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.green.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _startCall(user['id'], user['name'], 'audio'),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        child: const Icon(
-                          Icons.call,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(width: 12),
-                
-                // Video Call Button
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.blue.shade400,
-                        Colors.blue.shade600,
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _startCall(user['id'], user['name'], 'video'),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        child: const Icon(
-                          Icons.videocam,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 16),
+            Text(
+              name,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
             ),
           ],
-        ),
-          ),
         ),
       ),
     );
@@ -1645,6 +1805,159 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
   }
 
   Widget _buildConnectedScreen() {
+    if (_callType == 'video') {
+      return _buildFullScreenVideoLayout();
+    } else {
+      return _buildAudioCallWithHeader();
+    }
+  }
+
+  Widget _buildFullScreenVideoLayout() {
+    return Stack(
+      children: [
+        // Full Screen Remote Video - Edge to Edge
+        Positioned.fill(
+          child: Container(
+            color: Colors.black,
+            child: _remoteStream != null
+                ? RTCVideoView(
+                    _remoteRenderer,
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  )
+                : Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildAvatar(
+                          name: _getOtherPersonName(),
+                          size: 120,
+                          fontSize: 48,
+                          showStatusRing: false,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          _getOtherPersonName(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Waiting for video...',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+
+        // Top Header Overlay
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.7),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 20, 20, 20),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Connected',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        _getOtherPersonName(),
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Call Duration Timer
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Text(
+                    _formatDuration(_callDuration),
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Draggable Local Video (Picture-in-Picture)
+        if (_localStream != null)
+          _buildDraggableLocalVideo(),
+
+        // Bottom Controls Overlay
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [
+                  Colors.black.withOpacity(0.7),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).padding.bottom + 20),
+            child: _buildSimpleCallControls(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAudioCallWithHeader() {
     return Container(
       color: Colors.grey.shade900,
       child: SafeArea(
@@ -1709,9 +2022,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
             
             // Main Content Area
             Expanded(
-              child: _callType == 'video'
-                  ? _buildSimpleVideoLayout()
-                  : _buildSimpleAudioLayout(),
+              child: _buildSimpleAudioLayout(),
             ),
             
             // Simple Call Controls
@@ -1720,6 +2031,111 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         ),
       ),
     );
+  }
+
+
+  Widget _buildDraggableLocalVideo() {
+    // Initialize position if not set
+    if (!_isLocalVideoPositioned) {
+      _localVideoPosition = Offset(
+        MediaQuery.of(context).size.width - 140, // Right side
+        MediaQuery.of(context).padding.top + 80, // Below header
+      );
+      _isLocalVideoPositioned = true;
+    }
+
+    return Positioned(
+      left: _localVideoPosition.dx,
+      top: _localVideoPosition.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _localVideoPosition = Offset(
+              (_localVideoPosition.dx + details.delta.dx).clamp(
+                0.0,
+                MediaQuery.of(context).size.width - 120,
+              ),
+              (_localVideoPosition.dy + details.delta.dy).clamp(
+                MediaQuery.of(context).padding.top + 20,
+                MediaQuery.of(context).size.height - 200,
+              ),
+            );
+          });
+        },
+        onPanEnd: (details) {
+          // Optional: Add snap-to-edge functionality
+          _snapToEdge();
+        },
+        child: Container(
+          width: 120,
+          height: 160,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Stack(
+              children: [
+                RTCVideoView(
+                  _localRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  mirror: true,
+                ),
+                // Drag handle indicator
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(
+                      Icons.drag_indicator,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _snapToEdge() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final paddingTop = MediaQuery.of(context).padding.top;
+    
+    setState(() {
+      // Snap to left or right edge
+      if (_localVideoPosition.dx < screenWidth / 2) {
+        _localVideoPosition = Offset(20, _localVideoPosition.dy);
+      } else {
+        _localVideoPosition = Offset(screenWidth - 140, _localVideoPosition.dy);
+      }
+      
+      // Ensure it stays within screen bounds
+      _localVideoPosition = Offset(
+        _localVideoPosition.dx.clamp(0.0, screenWidth - 120),
+        _localVideoPosition.dy.clamp(
+          paddingTop + 20,
+          screenHeight - 200,
+        ),
+      );
+    });
   }
 
   Widget _buildSimpleVideoLayout() {
@@ -1846,25 +2262,31 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           // Mute Button
-          _buildSimpleControlButton(
+          _buildControlButton(
             icon: _isMuted ? Icons.mic_off : Icons.mic,
             isActive: _isMuted,
+            activeColor: Colors.green,
+            isSimple: true,
             onTap: _toggleMute,
           ),
           
           // Video Toggle (only for video calls)
           if (_callType == 'video')
-            _buildSimpleControlButton(
+            _buildControlButton(
               icon: _isVideoEnabled ? Icons.videocam : Icons.videocam_off,
               isActive: _isVideoEnabled,
+              activeColor: Colors.blue,
+              isSimple: true,
               onTap: _toggleVideo,
             ),
           
           // End Call Button
-          _buildSimpleControlButton(
+          _buildControlButton(
             icon: Icons.call_end,
             isActive: true,
+            activeColor: Colors.red,
             isEndCall: true,
+            isSimple: true,
             onTap: _endCall,
           ),
         ],
@@ -1872,31 +2294,6 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
     );
   }
 
-  Widget _buildSimpleControlButton({
-    required IconData icon,
-    required bool isActive,
-    required VoidCallback onTap,
-    bool isEndCall = false,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: isEndCall ? 60 : 50,
-        height: isEndCall ? 60 : 50,
-        decoration: BoxDecoration(
-          color: isEndCall 
-              ? Colors.red 
-              : (isActive ? Colors.white.withOpacity(0.2) : Colors.grey.shade800),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: isEndCall ? 28 : 24,
-        ),
-      ),
-    );
-  }
 
   Widget _buildVideoCallLayout() {
     return Stack(
@@ -2167,24 +2564,232 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
     );
   }
 
+  // Common styling methods to reduce redundancy
+  Widget _buildProfilePhoto(String? profileImage, String name) {
+    return Stack(
+      children: [
+        // Profile Image Container
+        Container(
+          width: 70,
+          height: 70,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: profileImage != null && profileImage.isNotEmpty
+                ? Image.network(
+                    profileImage,
+                    width: 70,
+                    height: 70,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildFallbackAvatar(name, 70, 28);
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return _buildFallbackAvatar(name, 70, 28);
+                    },
+                  )
+                : _buildFallbackAvatar(name, 70, 28),
+          ),
+        ),
+        
+        // Online Status Ring
+        Positioned(
+          bottom: 2,
+          right: 2,
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: Center(
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.green.withOpacity(0.5),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFallbackAvatar(String name, double size, double fontSize) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.pink.shade300,
+            Colors.pink.shade500,
+          ],
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: GoogleFonts.poppins(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar({
+    required String name,
+    double size = 56,
+    double fontSize = 22,
+    bool showStatusRing = true,
+  }) {
+    return Stack(
+      children: [
+        Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.pink.shade300,
+                Colors.pink.shade500,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.pink.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              name[0].toUpperCase(),
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: fontSize,
+              ),
+            ),
+          ),
+        ),
+        if (showStatusRing)
+          Positioned(
+            bottom: 1,
+            right: 1,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.green.withOpacity(0.5),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  BoxDecoration _buildGlassDecoration({
+    double borderRadius = 20,
+    List<Color>? gradientColors,
+    double borderOpacity = 0.2,
+  }) {
+    return BoxDecoration(
+      gradient: gradientColors != null 
+          ? LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradientColors,
+            )
+          : null,
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: Colors.white.withOpacity(borderOpacity),
+        width: 1.0,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.pink.withOpacity(0.15),
+          blurRadius: 15,
+          offset: const Offset(0, 5),
+          spreadRadius: 0,
+        ),
+        BoxShadow(
+          color: Colors.white.withOpacity(0.9),
+          blurRadius: 1,
+          offset: const Offset(0, 1),
+          spreadRadius: 0,
+        ),
+      ],
+    );
+  }
+
   Widget _buildControlButton({
     required IconData icon,
     required bool isActive,
     required Color activeColor,
     required VoidCallback onTap,
     bool isEndCall = false,
+    bool isSimple = false,
   }) {
+    final double size = isEndCall ? (isSimple ? 60.0 : 70.0) : (isSimple ? 50.0 : 60.0);
+    final double iconSize = isEndCall ? (isSimple ? 28.0 : 30.0) : (isSimple ? 24.0 : 25.0);
+    
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: isEndCall ? 70 : 60,
-        height: isEndCall ? 70 : 60,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: isEndCall 
               ? Colors.red 
               : (isActive ? activeColor : Colors.white.withOpacity(0.2)),
           shape: BoxShape.circle,
-          boxShadow: [
+          boxShadow: isSimple ? null : [
             BoxShadow(
               color: (isEndCall ? Colors.red : activeColor).withOpacity(0.3),
               blurRadius: 15,
@@ -2195,7 +2800,7 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
         child: Icon(
           icon,
           color: isEndCall ? Colors.white : (isActive ? Colors.white : Colors.white.withOpacity(0.8)),                    
-          size: isEndCall ? 30 : 25,
+          size: iconSize,
         ),
       ),
     );
