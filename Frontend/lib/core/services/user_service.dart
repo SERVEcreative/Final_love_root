@@ -3,6 +3,7 @@ import '../models/user_models.dart';
 import '../../features/profile/models/user_profile_model.dart';
 import '../utils/logger.dart';
 import 'token_service.dart';
+import 'dart:io';
 
 class UserService {
   // API Endpoints - Updated to match backend structure
@@ -45,7 +46,15 @@ class UserService {
       if (response['success'] == true && response['user'] != null) {
         final userData = response['user'];
         Logger.success('✅ Current user profile fetched successfully');
-        return UserProfileModel.fromMap(userData);
+        Logger.info('📱 Raw user data: $userData');
+        Logger.info('📱 Raw image field: ${userData['image']}');
+        Logger.info('📱 Raw photoUrl field: ${userData['photoUrl']}');
+        
+        final userProfile = UserProfileModel.fromMap(userData);
+        Logger.info('📱 Processed image URL: ${userProfile.image}');
+        Logger.info('📱 Processed photoUrl: ${userProfile.photoUrl}');
+        
+        return userProfile;
       } else {
         throw Exception('Invalid response format or user not found');
       }
@@ -167,6 +176,17 @@ class UserService {
   static Future<String> uploadPhoto(String filePath) async {
     try {
       Logger.info('📤 Uploading profile photo...');
+      Logger.info('📤 File path: $filePath');
+      
+      // Create File object from path
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('File does not exist: $filePath');
+      }
+      
+      // Get file size for debugging
+      final fileSize = await file.length();
+      Logger.info('📤 File size: ${fileSize} bytes');
       
       // Get JWT token for authentication
       final token = await TokenService.getToken();
@@ -179,20 +199,33 @@ class UserService {
         'Authorization': 'Bearer $token',
       };
       
-      final response = await ApiService.post(
+      Logger.info('📤 Sending actual image file to backend...');
+      Logger.info('📤 Endpoint: $_uploadPhotoEndpoint');
+      Logger.info('📤 Field name: photo');
+      
+      // Upload the actual file using multipart form data
+      final response = await ApiService.uploadFile(
         _uploadPhotoEndpoint,
-        body: {
-          'photoPath': filePath,
+        file: file,
+        fieldName: 'photo', // This should match what your backend expects
+        additionalFields: {
+          'type': 'profile', // Optional: specify this is a profile photo
         },
         headers: headers,
+        onSendProgress: (sent, total) {
+          final progress = (sent / total * 100).toStringAsFixed(1);
+          Logger.info('📤 Upload progress: $progress% ($sent/$total bytes)');
+        },
       );
       
       Logger.info('📡 API Response: $response');
       
       // Handle the backend response format
       if (response['success'] == true) {
+        final imageUrl = response['photoUrl'] ?? response['imageUrl'] ?? response['url'] ?? filePath;
         Logger.success('✅ Profile photo uploaded successfully');
-        return response['photoUrl'] ?? '';
+        Logger.info('✅ Image URL received: $imageUrl');
+        return imageUrl;
       } else {
         throw Exception('Failed to upload photo or invalid response format');
       }
