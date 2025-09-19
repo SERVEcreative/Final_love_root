@@ -147,25 +147,87 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
     });
 
     try {
-      // Get online users from Supabase
+      // Get online users from Supabase with profile image fields
       final response = await Supabase.instance.client
           .from('users')
-          .select('id, name, status')
+          .select('id, name, status, avatar_url, bio, age, gender, location, last_seen, is_verified, is_premium, profile_completion_percentage')
           .eq('status', 'online')
           .neq('id', _currentUserId!);
 
+      // Process users to generate proper image URLs
+      final processedUsers = await _processUserImages(response);
+
       setState(() {
-        _onlineUsers = List<Map<String, dynamic>>.from(response);
+        _onlineUsers = processedUsers;
         _isLoadingUsers = false;
       });
 
-      print('✅ [CALL_SYSTEM] Loaded ${_onlineUsers.length} online users');
+      print('✅ [CALL_SYSTEM] Loaded ${_onlineUsers.length} online users with profile images');
     } catch (e) {
       print('❌ [CALL_SYSTEM] Failed to load online users: $e');
       setState(() {
         _isLoadingUsers = false;
       });
       _showError('Failed to load online users: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _processUserImages(List<dynamic> users) async {
+    final processedUsers = <Map<String, dynamic>>[];
+    
+    for (final user in users) {
+      final userMap = Map<String, dynamic>.from(user);
+      
+      // Generate proper image URL from Supabase storage
+      final profileImageUrl = await _getProfileImageUrl(userMap);
+      userMap['profile_image_url'] = profileImageUrl;
+      
+      processedUsers.add(userMap);
+    }
+    
+    return processedUsers;
+  }
+
+  Future<String?> _getProfileImageUrl(Map<String, dynamic> user) async {
+    try {
+      // Check the avatar_url field from your table schema
+      final avatarUrl = user['avatar_url'];
+      
+      if (avatarUrl != null && avatarUrl.toString().isNotEmpty) {
+        // If it's already a full URL, return it
+        if (avatarUrl.toString().startsWith('http')) {
+          return avatarUrl.toString();
+        }
+        
+        // If it's a storage path, generate the public URL
+        if (avatarUrl.toString().startsWith('profiles/') || 
+            avatarUrl.toString().startsWith('avatars/') ||
+            avatarUrl.toString().startsWith('images/') ||
+            avatarUrl.toString().startsWith('user-images/')) {
+          
+          // Try different possible bucket names (with your updated bucket name first)
+          final possibleBuckets = ['Love-user-image', 'profiles', 'avatars', 'images'];
+          
+          for (final bucketName in possibleBuckets) {
+            try {
+              final publicUrl = Supabase.instance.client.storage
+                  .from(bucketName)
+                  .getPublicUrl(avatarUrl.toString());
+              
+              print('🖼️ [CALL_SYSTEM] Generated image URL for ${user['name']} from bucket $bucketName: $publicUrl');
+              return publicUrl;
+            } catch (e) {
+              // Try next bucket if this one fails
+              continue;
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ [CALL_SYSTEM] Error generating image URL for ${user['name']}: $e');
+      return null;
     }
   }
 
@@ -951,14 +1013,16 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
   }
 
   Widget _buildUserCard(Map<String, dynamic> user) {
-    // Extract user information with fallbacks
+    // Extract user information with fallbacks using correct table field names
     final name = user['name'] ?? 'Unknown User';
-    final age = user['age'] ?? user['birth_date'] != null 
-        ? DateTime.now().year - DateTime.parse(user['birth_date']).year
-        : null;
-    final about = user['bio'] ?? user['about'] ?? 'No bio available';
-    final profileImage = user['profile_image'] ?? user['image'] ?? user['avatar'];
-    final location = user['location'] ?? user['city'] ?? 'Location not set';
+    final age = user['age']; // Direct field from your table
+    final about = user['bio'] ?? 'No bio available';
+    // Use the processed profile image URL or fallback to avatar_url
+    final profileImage = user['profile_image_url'] ?? user['avatar_url'];
+    final location = user['location'] ?? 'Location not set';
+    final gender = user['gender'] ?? 'prefer_not_to_say';
+    final isVerified = user['is_verified'] ?? false;
+    final isPremium = user['is_premium'] ?? false;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1065,18 +1129,55 @@ class _CompleteCallSystemState extends State<CompleteCallSystem> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name and Age
+                    // Name and Age with verification/premium indicators
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            name,
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 24,
-                              color: Colors.white,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            children: [
+                              Text(
+                                name,
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 24,
+                                  color: Colors.white,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(width: 8),
+                              // Verification badge
+                              if (isVerified) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.verified,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              // Premium badge
+                              if (isPremium) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.star,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                            ],
                           ),
                         ),
                         if (age != null) ...[
